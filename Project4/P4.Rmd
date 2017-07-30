@@ -1,0 +1,832 @@
+Financial Contributions to Presidential Campaigns in Washington,by Fareeda Saleh
+========================================================
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+# Load all of the packages that you end up using in your analysis in this code
+# chunk.
+
+# Notice that the parameter "echo" was set to FALSE for this code chunk. This
+# prevents the code from displaying in the knitted HTML output. You should set
+# echo=FALSE for all code chunks in your file, unless it makes sense for your
+# report to show the code that generated a particular plot.
+
+# The other parameters for "message" and "warning" should also be set to FALSE
+# for other code chunks once you have verified that each plot comes out as you
+# want it to. This will clean up the flow of your report.
+
+library(ggplot2)
+library(scales)
+library(tidyr)
+library(gender)
+library(ggthemes)
+library(dplyr)
+library(gridExtra)
+
+```
+
+
+```{r echo=FALSE, Load_the_Data}
+# Load the Data
+getwd()
+Washington=read.csv("C:\\Users\\Fareeda\\Downloads\\P00000001-WA.csv",row.names=NULL)
+
+#sheft the columons and remove the exta X col
+colnames(Washington) <- c(colnames(Washington)[-1],"x")
+colnames(Washington)
+colnames(Washington)[-1]
+Washington$x <- NULL
+
+
+
+```
+
+#Introduction
+
+In this report we will explor the Financial Contributions to Presidential Campaigns.We choose the dataset of Washington state from Federal Election Commission http://fec.gov/disclosurep/pnational.do for the year 2016.We have 18 varibles and 292317 observations.Through this project 
+we will try to answer some question:
+
+
+What is the party has most support?
+
+Who the candidates has the most support?
+
+Does the gender play critical role in donation?
+
+What is the  occupation of the  most doners?
+
+Now lets view som summary information about the data: 
+
+``````{r echo=FALSE, Summay_Data}
+
+#summary of data
+summary(Washington)
+
+```
+
+
+We can see some issues in contb_receipt_amt column, First, the min value is negative and this is not acceptable.It may come from data entry mistake so we should delete the negatives values.Another thing is the max value equal to 10800 which is according to Contribution Limits for 2015-2016 http://www.fec.gov/info/contriblimitschart1516.pdf the limits on contributions should not exceed 2700$ for the individual, so we will delete the values upper than 2700.
+
+
+
+```{r echo=FALSE, updat_the_data_set}
+
+# updat the data set by removing the nonacceptable data
+Washington<- subset(Washington, contb_receipt_amt<=2700 & contb_receipt_amt>0)
+
+```
+
+
+Now we will add some variables(gender and party) to help us in analyze the data
+
+```{r echo=FALSE, updat_the_data}
+
+# creat a new col to hold the convert contbr_nm into chr
+
+Washington$contbr_nm.new <- as.character(Washington$contbr_nm)
+
+#using tidyr library to extract the first and last name
+
+Washington.new <- extract(Washington, contbr_nm.new, c("LastName","FirstName"), "(.*),\\s*(\\S*)\\s*.*", fill="left",perl=TRUE)
+#creat data frame gender
+gender<- gender(Washington.new$FirstName, c(1932, 1998),
+method = "ssa",
+countries = "United States")
+
+
+gender<- unique(gender)
+names(gender)[1] <- 'FirstName'
+#merge gender and washington.new to creat the gender col
+Washington.new<-merge(Washington.new, gender[, c("FirstName", "gender")])
+
+#creat Democrat varible
+democrat <- c("Clinton, Hillary Rodham", 
+              "Sanders, Bernard", 
+              "O'Malley, Martin Joseph", 
+              "Lessig, Lawrence", 
+              "Webb, James Henry Jr.")
+#creat Party varible in washington.new 
+Washington.new$party <- ifelse(Washington.new$cand_nm %in% democrat, "Democrat", "Republican")
+#for (others )varibl:https://github.com/susanli2016/udacity-data-analyst/blob/master/p4/Financial_Contribution_to_2016_Presidential_Campaign_MA.Rmd
+Washington.new$party[Washington.new$cand_nm %in% c("Johnson, Gary", "McMullin, Evan", "Stein, Jill")] <- 'others'
+
+```
+
+Now let's view the data set after an update it by deleting the negative values(2905) and values upper than 2700(1504) from contb_reiecpt_amt , add new variables:
+
+-gender: The gender of donor women or men.
+
+-party: The party of the candidate(Democrat, Republican or others )
+
+
+```{r echo=FALSE, view_data}
+ dim(Washington.new)
+```
+
+So we have 22 variables and 279876 observation.Each single observation is represent a single donor.
+
+
+## General View
+
+We will investigate the contribution distribution  across the parties, candidates, genders and occupations.first we will drawing histogram for contribuation.
+
+```{r echo=FALSE, Univariate_Plot,fig.width=20, fig.height=10}
+
+  ggplot (Washington.new, aes(x= contb_receipt_amt))+
+  geom_histogram(binwidth = 50)+
+  scale_x_continuous(breaks = seq(0,2700,100))+
+  ylab("Count") + 
+  xlab("Contribution Amount")+
+  theme_tufte() +
+  theme(plot.title = element_text(size = 25),
+           axis.text = element_text(size = 12),
+           axis.title = element_text(size = 16,face = "bold") )+
+  ggtitle('Histogram of contribution receipt amount')
+  
+```
+
+The histogram was unuseful to display the details of the contribution receipt amount.There are many outliers high and low values, So we will transform it to log10.
+
+```{r echo=FALSE, Univariate_Plots1,fig.width=20, fig.height=10}
+
+ ggplot (Washington.new, aes(x= contb_receipt_amt))+
+ geom_histogram(bins=30)+
+ scale_x_continuous(trans = log10_trans(), 
+ breaks = seq(50,2700,500))+
+  ylab("Count") + 
+  xlab("Contribution Amount[$]")+
+  theme_tufte() +
+  ggtitle('Histogram of contribution receipt amount') +
+    theme(plot.title = element_text(size = 25),
+           axis.text = element_text(size = 12),
+           axis.title = element_text(size = 16,face = "bold")
+           )
+```
+
+
+```{r  echo=FALSE}
+summary(Washington.new$contb_receipt_amt)
+```
+
+
+We can see that few donors made high donation  when most people are donate with 27$ also few people made donation less than 5 dollars and the mean is 85.49 per individual.
+
+
+
+```{r echo=FALSE}
+#create data set of party
+party_data <-Washington.new %>% 
+           group_by(party)  %>% 
+           summarise(   Total    = sum(contb_receipt_amt),
+                          cnd_l    = length(unique(cand_id)),
+                          Avg      = Total /cnd_l,
+                           n=n())
+
+party_data$party <- ordered(party_data$party, 
+                                   levels = c('Democrat', 'Republican', 'others'))
+sum (party_data$n)
+#plot doners for each party
+ggplot(aes(x = party, y = n, fill = party), data = party_data) +
+  geom_bar(stat = 'identity') +
+  geom_text(stat = 'identity', aes(label = n),
+  data = party_data, vjust = -0.4) +
+  xlab('Party') +
+  ylab('Number of Contributions') +
+  ggtitle('Total Number of Contributions by Party') +
+  scale_fill_manual(values = c("blue","red3","moccasin"))
+
+```
+
+
+
+There is 279876 countrbiutr for all parties,The majurite of them are donate to Democrat party while there is 40616 countribute to Republican party and this is a big differance betweenthe these tow parties it's 236714 doners!! while there is just 1273 donaite to otheres party.
+
+ok,lets see How many doners countribute for each candidites?
+
+
+```{r echo=FALSE,fig.width=15, fig.height=10}
+# 
+
+
+candnm_data <-Washington.new %>% 
+           group_by(party,cand_nm)  %>% 
+           summarise(   Total_cd    = sum(contb_receipt_amt)
+                    ,donor_nm = n()) %>% 
+             arrange(Total_cd)
+
+candnm_data$cand_nm <- factor(candnm_data$cand_nm, levels=candnm_data$cand_nm[order(candnm_data$donor_nm)], ordered=TRUE)
+
+#plot
+
+ggplot (candnm_data, aes(x = cand_nm ,y = donor_nm, fill= cand_nm))+
+     geom_bar(stat='identity',aes(fill = cand_nm))+
+     geom_text(aes(label=donor_nm), hjust=0, size=3.5, color="black")+
+     xlab("candidates")+
+     ylab("Contributer")+
+  scale_y_log10()+
+  coord_flip() +
+  theme_tufte() +
+   ggtitle("Bar Chart Number of Contributions")+
+    theme(plot.title = element_text(size = 16),
+           axis.text = element_text(size = 14),
+           axis.title = element_text(size = 14,face = "bold") )
+
+```
+
+
+
+
+There is 16 candidates from the Republican party , 5 from Democrat and 3 from other paties,However Hillary and Sanders which are both from
+Democatic party has the most doners then fallow by Trump from the Rbuplican party and the less support by doners are Glimore,James and Perry
+James they just has 3 doners.
+
+So,how many male and female contribute in donation? 
+
+```{r echo=FALSE, Multivariate_Plots}
+
+   gendar_data <-Washington.new %>% 
+                   group_by(gender)  %>% 
+                   summarise(   Total_gd   = sum(contb_receipt_amt),
+                    gd_nm = n(),
+                      Avg=Total_gd/gd_nm ) %>% 
+       arrange(Total_gd)
+
+```
+
+
+```{r echo=FALSE, Plots}
+
+   ggplot ( gendar_data, aes(x = gender ,y = gd_nm , fill= gender))+
+     geom_bar(stat='identity',aes(fill = gender))+
+     scale_fill_manual(values=c("deeppink2","cornflowerblue"))+
+     geom_text(aes(label=gd_nm), vjust=-0.3, size=3.5, color="black")+
+     xlab("Gender")+
+     ylab("Number of gender")+
+  theme_tufte() +
+   ggtitle("Bar Chart of gender Number")+
+    theme(plot.title = element_text(size = 14),
+           axis.text = element_text(size = 10),
+           axis.title = element_text(size = 10,face = "bold") )
+```
+
+
+we can see female is contributed more than male there is 150482 women donate while the number of males  who donate is 129394 it's [54% to 46%]
+
+```{r echo=FALSE ,fig.width=15, fig.height=10}
+
+#create Data of accupation
+ oc_nm <- Washington.new   %>% 
+filter(contbr_occupation != '', 
+         contbr_occupation != 'NONE',
+       contbr_occupation !='INFORMATION REQUESTED') %>%
+  group_by(contbr_occupation) %>% 
+  summarise(mean_oc= mean(contb_receipt_amt),
+            Total=sum(contb_receipt_amt),
+            n = n())%>%
+arrange(desc(n)) %>% 
+  top_n(10,n)
+oc_nm$contbr_occupation <- factor(oc_nm$contbr_occupation, levels=oc_nm$contbr_occupation[order(oc_nm$n)], ordered=TRUE)
+
+#plot
+ggplot (oc_nm, aes(y = n ,x = contbr_occupation) )+
+     geom_bar(stat='identity',color="peachpuff4", fill="salmon1",position = position_dodge())+
+     geom_text(aes(label= n),position = position_dodge(0.8), vjust=-0.4, size=3.5, color="black")+
+     xlab("Occupation")+
+     ylab("Doners")+
+   theme_tufte() +
+   ggtitle("Bar Chart of Top 10 occupation on doneation")+
+    theme(plot.title = element_text(size = 16),
+           axis.text = element_text(size = 12),
+           axis.title = element_text(size = 12,face = "bold") )
+```
+
+
+The highest number of donors are Retired wich has 44% from total numbers of donors the next stage was people who don't employed by 31% and this while the last is managers by 1% and this is really surprise me according to the income average it should be the physician and managers first place of the list.
+
+## Parties,Candidete and Donations
+
+In this section of our analyses, We will explore how parties effect on the donation and how much each candidate received from the donation operation.first the total of contribution amount are 23926435$ and we have 5 candidates from democrat party and 16 candidates from republican party and 3 from another party so we assume that the republican will earn more money than democrat party and others party according to the numbers of his candidates,Now let's investigate the contribution amount according to parties by drawing a box plot.
+
+
+```{r  echo=FALSE, Univariate_Plots2 }
+ #plot  
+ggplot(Washington.new,aes(x = party ,y = contb_receipt_amt , fill= party))+
+geom_boxplot()+
+scale_fill_manual(values=c("blue","moccasin","red3" ))+
+xlab("Party")+
+ylab("Contribution Amount")+
+ggtitle("Box plot of Contribution Amount by Parties")+
+  theme_tufte() +
+    theme(plot.title = element_text(size = 16),
+           axis.text = element_text(size = 10),
+           axis.title = element_text(size = 10,face = "bold"))
+```
+
+
+The box plot have more outliers so we will apply the log10 transformation
+
+```{r echo=FALSE, Univariate_Plots3}
+
+ggplot(Washington.new,aes(x = party ,y = contb_receipt_amt , fill= party))+
+geom_boxplot()+
+scale_y_log10()+
+scale_fill_manual(values=c("blue","moccasin","red3" ))+
+xlab("Party")+
+ylab("Log 10 Contribution Amount")+
+ggtitle("Box plot of Contribution Amount by Parties")+
+  theme_tufte() +
+    theme(plot.title = element_text(size = 16),
+           axis.text = element_text(size = 10),
+           axis.title = element_text(size = 10,face = "bold"))
+
+```
+
+
+It's pretty good. we can see clearly that contribution distribution of democrat party is more spread than republican party we can see that in 1Q and 4Q and this means a large number of both small amount of donation and a large amount of donation. candidates who belong to others parties has less amount of donation and there median is less then mean and for both Democrat and Republican has an outlires in 1Q but it's vary in Democrat and this mean they have some doners made very smuall amount of donation.
+
+Now lets draw bar chart to see how much each party earn and what is the average of donation for both parties:
+
+```{r echo=FALSE, Total}
+  Total <- sum(Washington.new$contb_receipt_amt)
+```
+
+
+```{r echo=FALSE, partydf}
+
+
+party_data <-Washington.new %>% 
+           group_by(party)  %>% 
+           summarise(   Total    = sum(contb_receipt_amt),
+                          cnd_l    = length(unique(cand_id)),
+                          Avg      = Total /cnd_l)
+
+party_data
+```
+
+
+
+```{r echo=FALSE , plot4, fig.width=12, fig.height=5}
+P1 <- ggplot (party_data, aes(x = party ,y = Total  , fill= party))+
+      geom_bar(stat='identity')+
+     scale_fill_manual(values=c("blue","red3","moccasin"))+
+      geom_text(aes(label=Total), vjust=-0.3, size=3.5, color="black")+
+      xlab("Party")+
+      ylab("Total Contribution Amount")+
+      ggtitle("BarChart of Contribution Amount by Parties")+
+  
+        theme(plot.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 12,face = "bold"),
+        legend.position = "none")
+
+
+P2<- ggplot (party_data, aes(x = party ,y =Avg , fill= party))+
+     geom_bar(stat='identity')+
+     scale_fill_manual(values=c("blue","red3","moccasin"))+
+     geom_text(aes(label=Avg), vjust=-0.3, size=3.5, color="black")+
+     xlab("Party")+
+     ylab(" Avrage Contribution Amount")+
+  
+    ggtitle("Bar Chart of  Avrage Contribution Amount by Parties")+
+    theme(plot.title = element_text(size = 14),
+           axis.text = element_text(size = 12),
+           axis.title = element_text(size = 12,face = "bold"),
+           legend.position = "none")
+
+grid.arrange(P1,P2,ncol=2)
+
+
+```
+
+
+We can see the number of candidates did not affect the donation amount for parties, the democrat party received in total about 18026000 thousand dollars it's 75% of total donation , each democrat candidates received in average about 3605000 thousand dollars, so we can see the high difference between democrat and republican it's 52% of total donation and the others parties has the less support by 1%. This will lead us to focus on the candidates variables, we try now to answer the question how much each candidates received from the donors?
+
+```{r echo=FALSE ,cnddf}
+cand_data <-Washington.new %>% 
+           group_by(party,cand_nm)  %>% 
+           summarise(   Total_cd    = sum(contb_receipt_amt)
+                    ,donor_nm = n()) %>% 
+             arrange(Total_cd)
+```
+
+
+
+
+```{r echo=FALSE, cnddf1}
+
+cand_data <-Washington.new %>% 
+           group_by(party,cand_nm)  %>% 
+           summarise(   Total_cd    = sum(contb_receipt_amt)
+                    ,donor_nm = n()) %>% 
+             arrange(Total_cd)
+
+cand_data$cand_nm <- factor(cand_data$cand_nm, levels=cand_data$cand_nm[order(cand_data$Total_cd)], ordered=TRUE)
+```
+
+
+```{r echo=FALSE,plot6}
+
+ggplot (cand_data, aes(x = cand_nm ,y = Total_cd/1000 , fill= party))+
+     geom_bar(stat='identity',aes(fill = party))+
+     scale_fill_manual(values=c("blue","moccasin","red3"))+
+     geom_text(aes(label=Total_cd/1000), hjust=0, size=3.5, color="black")+
+     xlab("candidates")+
+     ylab("Contribution Amount[$]")+
+  scale_y_log10()+
+  coord_flip() +
+  theme_tufte() +
+   ggtitle("Bar Chart of Contribution Amount by candidates")+
+    theme(plot.title = element_text(size = 14),
+           axis.text = element_text(size = 10),
+           axis.title = element_text(size = 10,face = "bold"))
+```
+
+
+The top 2 in the amount donation is Hillary and Sanders which are both from democrat party, Sanders received donation less than 50% of Hillary amount donation, The things that I interested in is the majority of democrat party donation goes to Hillary and Sanders.Now lets take the top 3 of the candidates and explore how many donors made a donation for them?
+ 
+```{r echo=FALSE,topcnd_df}
+
+Top_cd <- Washington.new[Washington.new$cand_nm %in% c('Sanders, Bernard','Clinton, Hillary Rodham','Trump, Donald J.'), ]
+Top_cd1 <- Top_cd  %>% 
+  group_by(party,cand_nm) %>% 
+  summarise(Total_d= round(sum(contb_receipt_amt),2),
+            donor_nm = n()) %>%
+  arrange(Total_d)
+```
+
+
+```{r echo=FALSE,plot7}
+
+ggplot (Top_cd1, aes(x = cand_nm ,y = donor_nm , fill= party))+
+     geom_bar(stat='identity',aes(fill = party))+
+     scale_fill_manual(values=c("blue","red3"))+
+     geom_text(aes(label=donor_nm), vjust=0, size=3.5, color="black")+
+     xlab("candidates")+
+     ylab("Contribution Amount")+
+  theme_tufte() +
+   ggtitle("Bar Chart of Number of Doners")+
+    theme(plot.title = element_text(size = 14),
+           axis.text = element_text(size = 10),
+           axis.title = element_text(size = 10,face = "bold"))
+```
+
+
+it's very clear that Trump has the lowest number of donors the difference btween hem and sanders,Hillary are very huge,However the important things that I notice in this diagram that sanders are very close to Hillary,in other hand Hillary are received  more than 50%of donations than sanders so this leading us to explore the distribution of amount of each of them:
+
+```{r echo=FALSE,amountdf}
+
+Amount_cd <- Washington.new[Washington.new$cand_nm %in% c('Sanders, Bernard','Clinton, Hillary Rodham','Trump, Donald J.'), ]
+Amount_cd1 <- Top_cd  %>% 
+  group_by(cand_nm,contb_receipt_amt) %>% 
+  summarise(Total_d= round(sum(contb_receipt_amt),2),
+            donor_nm = n()) %>%
+  arrange(Total_d)
+
+Amount_cd1
+```
+
+
+
+```{r echo=FALSE,polt9 }
+
+ggplot(Amount_cd1,aes(x = cand_nm ,y = contb_receipt_amt , fill= cand_nm))+
+geom_boxplot()+
+scale_fill_manual(values=c("blue","blue","red3" ))+
+theme_tufte() +
+   ggtitle("Box Plot of Contribution Amount by Tpo3 candidates")+
+    theme(plot.title = element_text(size = 14),
+           axis.text = element_text(size = 10),
+           axis.title = element_text(size = 10,face = "bold"))+
+           xlab("candidates")+
+           ylab("Contribution Amount")
+```
+
+
+we can see alot of donors that made a huge amount of donations for Hillary but I think we should transforming the box plot to log10 to see more details.
+
+```{r echo=FALSE,plot10}
+
+ggplot(Amount_cd1,aes(x = cand_nm ,y = contb_receipt_amt , fill= cand_nm))+
+geom_boxplot()+
+scale_y_log10()+
+scale_fill_manual(values=c("blue","blue","red3" ))+
+theme_tufte() +
+   ggtitle("Box Plot of log10 Contribution Amount by Tpo3 candidates")+
+    theme(plot.title = element_text(size = 14),
+           axis.text = element_text(size = 10),
+           axis.title = element_text(size = 10,face = "bold")
+           )+
+           xlab("candidates")+
+   
+          ylab("log10 Contribution Amount")
+
+
+```
+
+
+in Hillary, we can see the values are separate away from mean and this means she has a lot of donors made both very small and very large amount of donation,   the meadian is larger than the mean for sanders so the  majority are donate for him  with small amount of money.in oppasot of Trump wich the mean are larger than median so the majority of donation are big amount of mony.   
+
+##Gender and Donation 
+
+In this section, we will focus on the variable of gender and we will try to answer the how gender play role in the donation,Now let's see the contribution according to gender by drawing an histogram
+
+```{r echo=FALSE}
+
+#Destrbitun of countrbuation by gender
+
+ggplot (Washington.new, aes(x= contb_receipt_amt,fill=gender))+
+ geom_histogram(bins=30,position = position_dodge())+
+ scale_x_continuous(trans = log10_trans(), 
+ breaks = seq(10,2700,1000))+
+  ylab("Count") + 
+  xlab("Contribution Amount[$]")+
+  theme_tufte() +
+  ggtitle('Histogram of contribution receipt amount by gender') +
+    theme(plot.title = element_text(size = 20),
+           axis.text = element_text(size = 10),
+           axis.title = element_text(size = 16,face = "bold"))
+```
+
+
+ we can see female has high scales in the first half of histogram then they start to decrease the male has higher distribution in the end of histogram than female and that means males contribute with high donation than females.Ok,lets How Much amount of donation they made.
+
+
+```{r echo=FALSE, Plots1}
+ ggplot ( gendar_data, aes(x = gender ,y = Avg , fill= gender))+
+     geom_bar(stat='identity',aes(fill = gender))+
+     scale_fill_manual(values=c("deeppink2","cornflowerblue"))+
+     geom_text(aes(label=Avg), vjust=-0.3, size=3.5, color="black")+
+     xlab("Gender")+
+     ylab("Number of gender")+
+  theme_tufte() +
+   ggtitle("Bar Chart Contribution Amount by gender")+
+    theme(plot.title = element_text(size = 14),
+           axis.text = element_text(size = 10),
+           axis.title = element_text(size = 10,face = "bold"))
+```
+
+ 
+ when we focus on the amount of contribution the male has higher contribution than female the average of what male donate is 96.71608 dollars while the average of what female donate is 75.83601 dollars, This could be occure because the average of female salary is less than male or because some women are house wife.Now let see which parties are more supported by males or females?
+ 
+```{r echo=FALSE}
+gendarP <-Washington.new %>% 
+                   group_by(gender,party)  %>% 
+                   summarise( totalPg   = sum(contb_receipt_amt),
+                    gd_nm = n() ) %>% 
+       arrange(totalPg)
+
+```
+
+
+```{r echo=FALSE}
+ggplot (gendarP, aes(y = totalPg  ,x = gender, fill= party) )+
+     geom_bar(stat='identity',position = position_dodge())+
+     scale_fill_manual(values=c("blue","moccasin","red3"))+
+     geom_text(aes(label=totalPg),position = position_dodge(0.8), vjust=-0.4, size=3.5, color="black")+
+     xlab("gender")+
+     ylab("Contribution Amount")+
+   theme_tufte() +
+   ggtitle("Bar Chart of Contribution Amount by gender for party")+
+    theme(plot.title = element_text(size = 14),
+           axis.text = element_text(size = 10),
+           axis.title = element_text(size = 10,face = "bold"))
+```
+
+
+The females support the democrat party more than males in other hands the republican are supported by men than women Also the others parties are supported by males who donate more than 50% of what women donate for these parties.
+
+```{r echo=FALSE}
+Cnd <- Washington.new[Washington.new$cand_nm %in% c('Sanders, Bernard','Clinton, Hillary Rodham','Trump, Donald J.'), ]
+gcd <- Cnd  %>% 
+  group_by(cand_nm,gender) %>% 
+  summarise(Total= round(sum(contb_receipt_amt),2),
+            donor_nm = n()) %>%
+  arrange(cand_nm)
+```
+
+```{r echo=FALSE }
+ggplot (gcd, aes(y = Total  ,x = cand_nm, fill= gender) )+
+     geom_bar(stat='identity',position = position_dodge())+
+     geom_text(aes(label=Total),position = position_dodge(0.8), vjust=-0.4, size=3.5, color="black")+
+     xlab("candidates")+
+     ylab("Contribution Amount")+
+   theme_tufte() +
+   ggtitle("Bar Chart of Contribution Amount by gender")+
+    theme(plot.title = element_text(size = 14),
+           axis.text = element_text(size = 10),
+           axis.title = element_text(size = 10,face = "bold") )
+```
+
+
+Hillary has most support from women while Sanders and Trump has the less support by women and high support by mean,for my opinion we can not say women tend to support woman candidate because Hillary has the highest support from either male or female.However if there were another women candidates  and they have support by females in this setuation we can say that women mostly tend to support woman candidates.
+
+# Occupation and Donations
+
+Now will focus in in the variable occupation and see if there is a relation between the occupation and the amount of contribution?
+
+```{r echo=FALSE}
+
+oc <- Washington.new %>% 
+filter(contbr_occupation != '', 
+         contbr_occupation != 'NONE',
+       contbr_occupation !='INFORMATION REQUESTED') %>%
+  group_by(contbr_occupation) %>% 
+  summarise(mean_oc= round(mean(contb_receipt_amt),3),
+            Total=sum(contb_receipt_amt),
+            n = n())%>%
+arrange(desc(mean_oc)) %>% 
+  top_n(10,n)
+oc$contbr_occupation <- factor(oc$contbr_occupation, levels=oc$contbr_occupation[order(oc$mean_oc)], ordered=TRUE)
+```
+
+
+
+
+```{r  echo=FALSE, fig.width=15, fig.height=10}
+
+ggplot (oc, aes(y = mean_oc ,x = contbr_occupation) )+
+     geom_bar(stat='identity',color="peachpuff4", fill="salmon1",position = position_dodge())+
+     geom_text(aes(label= mean_oc),position = position_dodge(0.8), vjust=-0.4, size=3.5, color="black")+
+     xlab("Occupation")+
+     ylab("Avrage Countribuation[$]")+
+   theme_tufte() +
+   ggtitle("Bar Chart of Top 10 occupation on doneation")+
+    theme(plot.title = element_text(size = 14),
+           axis.text = element_text(size = 12),
+           axis.title = element_text(size = 12,face = "bold") )
+```
+
+
+ when we measured the average amount of donation we found that the attorney and physician are the highest contribution and donors who retired,teacher and not employed they are made small amount of donation.Now let see who these occupation support the parties and candidets.
+
+```{r echo=FALSE}
+Top_occu <- Washington.new[Washington.new$contbr_occupation %in% c('RETIRED','NOT EMPLOYED',	'SOFTWARE ENGINEER','TEACHER','ATTORNEY','	
+                                                                     HOMEMAKER','ENGINEER','PHYSICIAN','CONSULTANT','MANAGER'), ]
+occu_P <- Top_occu  %>% 
+  group_by(party,contbr_occupation) %>% 
+  summarise(Total= round(sum(contb_receipt_amt/1000),3),
+            n = n()) %>%
+  arrange(Total)
+```
+
+```{r  echo=FALSE ,fig.width=15, fig.height=10}
+  ggplot(occu_P, aes(party, contbr_occupation)) + 
+    geom_tile(aes(fill = log10(Total)),
+     color = "white")+
+     scale_fill_gradient(low = "darkslategray1",
+    high = "darkslateblue")+
+  
+labs(x="Party", y="Occupation", title="The Contrbuation of top10 occupation by Party")
+```
+
+When we see the distribution of the contribution to these top 10 occupation most of these contribution goes to democrat party also we can see from the heat map the retired support the democratic party with above of 2990000 dollars which is the most contribution in the map on other hand they support republican with 2010000 dollars,The not employeed doners support the democrat party with 1740000 dollars and donate to republican with 1.546000 and this is big difference,Moreover they did not made any donation to others parties!!.
+
+```{r echo=FALSE}
+
+pd_ocnd <- Washington.new[Washington.new$contbr_occupation %in% c('RETIRED','NOT EMPLOYED',	'SOFTWARE ENGINEER','TEACHER','ATTORNEY','	
+                                                                     HOMEMAKER','ENGINEER','PHYSICIAN','CONSULTANT','MANAGER'), ]
+pd_ocnd <- pd_ocnd[pd_ocnd$cand_nm %in% c('Sanders, Bernard','Clinton, Hillary Rodham','Trump, Donald J.'), ]
+
+top_ocnd <- pd_ocnd %>%
+  group_by(contbr_occupation,cand_nm) %>% 
+  summarise(Avg= round(mean(contb_receipt_amt),3),
+            Total=sum(contb_receipt_amt),
+            n = n())%>%
+arrange(desc(Avg)) %>% 
+  top_n(10,n)
+```
+
+
+
+
+
+```{r echo=FALSE, fig.width=15, fig.height=10}
+
+ Occucnd1<- ggplot(top_ocnd, aes(cand_nm, contbr_occupation)) + 
+    geom_tile(aes(fill = log10(Avg)),
+     color = "white")+
+     scale_fill_gradient(low = "darkslategray1",
+    high = "darkslateblue")+
+  
+labs(x="candidates", y="Occupation", title="The Contrbuation of top10 occupation by candidates ")
+
+
+Occucnd2 <- ggplot(top_ocnd, aes(cand_nm, contbr_occupation)) + 
+    geom_tile(aes(fill = log10(n)),
+     color = "white")+
+     scale_fill_gradient(low = "darkslategray1",
+    high = "darkslateblue")+
+  
+labs(x="candidates", y="Occupation", title="The doners of top10 occupation by candidates ")
+
+grid.arrange(Occucnd1,Occucnd2,ncol =1)
+
+```
+
+
+The most number of people not employed are donated to Sanders while the high number of retired donate to Hillary,also many donors donated to both Hillary and Sanders and Trump has the lowest number of donors especially from the not employee donors but he has high support from retired However when we focus on the Average amount of donation for all these occupation it's clear that trump has the measure of the contribution and Sanders has the less amount of contribution.Physician made high donated to trump in average the donate with above of 300 dollars for individual.
+
+# Final Plots and Summary
+
+### A few candidates received Most donation
+
+
+```{r echo=FALSE, Plot_One}
+ggplot (cand_data, aes(x = cand_nm ,y = Total_cd/1000 , fill= party))+
+     geom_bar(stat='identity',aes(fill = party))+
+     scale_fill_manual(values=c("blue","moccasin","red3"))+
+     geom_text(aes(label=Total_cd/1000), hjust=0, size=3.5, color="black")+
+     xlab("candidates")+
+     ylab("Contribution Amount(dollars)")+
+  scale_y_log10()+
+  coord_flip() +
+  theme_tufte() +
+   ggtitle("Bar Chart of Contribution Amount by candidates")+
+    theme(plot.title = element_text(size = 14),
+           axis.text = element_text(size = 10),
+           axis.title = element_text(size = 10,face = "bold") )
+```
+
+
+In Washington state most donation goes to a few candidates,Especially in Democrat party Hillary and Sanders have the most donation they recived 75% of the countrbuat amount of democratic party and Hillary received the most donation in general she has 52% of total donation for all candidates,for Republican party Tramp has the big percentage of donation it has 54.7 % of the contribution amount.The others parties have the the less donation it received 1.34%
+
+
+
+
+### Retired and not employed are tend to donate more than other occupation
+
+
+```{r echo=FALSE, Plot_Two , fig.width=15, fig.height=10}
+ggplot (oc_nm, aes(y = n ,x = contbr_occupation) )+
+     geom_bar(stat='identity',color="peachpuff4", fill="salmon1",position = position_dodge())+
+     geom_text(aes(label= n),position = position_dodge(0.8), vjust=-0.4, size=3.5, color="black")+
+     xlab("Occupation")+
+     ylab("Doners")+
+   theme_tufte() +
+   ggtitle("Bar Chart of Top 10 occupation on doneation")+
+    theme(plot.title = element_text(size = 16),
+           axis.text = element_text(size = 10),
+           axis.title = element_text(size = 14,face = "bold"))
+
+```
+
+
+As previous analysis we see that Retired and not employed comes in the first stage of the Top of 10 occupation donors by 76% of the total donors!! 44,77% of the donors are retired and this is something strange when we see the the Managers comes last by 1.96% this is could occur because some of them are donated under their companies.However when we combring this withe the average amount contrabuation the Retired came in the last of the top 10 doners.
+
+### Women tend to donate more than men
+
+```{r echo=FALSE, Plot_Three}
+
+ggplot ( gendar_data, aes(x = gender ,y = gd_nm , fill= gender))+
+     geom_bar(stat='identity',aes(fill = gender))+
+     scale_fill_manual(values=c("deeppink2","cornflowerblue"))+
+     geom_text(aes(label=gd_nm), vjust=-0.3, size=3.5, color="black")+
+     xlab("Gender")+
+     ylab("Number of Doners")+
+  theme_tufte() +
+   ggtitle("Bar Chart of gender Number")+
+    theme(plot.title = element_text(size = 14),
+           axis.text = element_text(size = 10),
+           axis.title = element_text(size = 10,face = "bold") )
+
+```
+
+
+in the contribution amount of presidential campaigns in washington state we can see 54% of donors are women so the difference between women and men donors are 8% and most of women donate to Hillary,However when we focus in the amount countrbution we found the males has the highest percentage they contribute by 52% of the total donation amount.
+
+
+# Reflection
+
+In this project I analyzes the washington state which has 18 varibles and 292317 observations through this analysis I faced some issues:
+
+when reading the data from CSV files there was an extra column and the others column was not arrange so I try to rearrange the columns.
+I had to add some variables to help me in analyzing the data set,In addition I struggled with the Age package because it is the first time I deal with it.
+
+However there are some interesting finding I should to mention it :
+
+
+-Washington state are highly support the democratic party, especially Hillary and Sanders.
+
+-Most of donation go to few candidates. 
+
+-The Number of women who donate are more than men. 
+
+-The males tend to donate with large amount of money. 
+
+-Retired and  the not employed are the most high number of donors 
+
+-The not employed people did not donate to other parties.
+
+My future works is to explore another variables like the contributor city and also build a Predictive model to predict who is the person that will made the large donation?
+
+# Resources:
+
+R-bloggers:
+https://www.r-bloggers.com/making-faceted-heatmaps-with-ggplot2/
+https://www.r-bloggers.com/aggregation-with-dplyr-summarise-and-summarise_each/
+
+idre.ucla:
+http://stats.idre.ucla.edu/r/faq/frequently-asked-questions-about-rhow-can-i-subset-a-data-setthe-r-program-as-a-text-file-for-all-the-code-on-this-page-subsetting-is-a-very-important-component/
+
+Files colors:
+http://www.stat.columbia.edu/~tzheng/files/Rcolor.pdf
