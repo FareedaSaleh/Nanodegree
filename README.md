@@ -2,7 +2,7 @@
 
 This repository contains project that achevment in Data Analyst Nanodegree.
 
-P0: Find the Optimal Chopstick Length
+P0: -
 
 P1: Test a Perceptual Phenomenon
 
